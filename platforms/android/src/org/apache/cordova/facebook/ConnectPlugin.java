@@ -482,8 +482,14 @@ public class ConnectPlugin extends CordovaPlugin {
                             builder.setDescription(paramBundle.getString("description"));
                         // Check for native FB Messenger application
                         if (builder.canPresent()) {
-                            FacebookDialog dialog = builder.build();
-                            dialog.present();
+                            if("true".equals(paramBundle.getString("peek"))) {
+                                Log.v(TAG, "Invoking callback due to peek param");
+                                showDialogContext.success("Messaging available");
+                            }
+                            else {
+                                FacebookDialog dialog = builder.build();
+                                dialog.present();
+                            }
                         }  else {
                             // Not found
                             trackingPendingCall = false;
