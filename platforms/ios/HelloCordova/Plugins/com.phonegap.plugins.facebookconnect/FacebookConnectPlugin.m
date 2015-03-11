@@ -422,9 +422,8 @@
             if ([FBDialogs canPresentMessageDialogWithParams:fbparams]) {
                 // We cannot use the Web Dialog Builder API, must use FBDialog for messaging
                 // Present message dialog
-                NSString* peek = [[NSString alloc] initWithString:[options objectForKey:@"peek"]];
-                if ([peek isEqualToString:@"true"]) {
-                    NSLog(@"Invoking callback due to peek param");
+                if ([[options objectForKey:@"peek"] isEqualToString:@"true"]) {
+                    NSLog(@"Facebook Messanger available, invoking callback due to peek param");
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:@"Messaging available."];
                     [self.commandDelegate sendPluginResult:pluginResult callbackId:self.dialogCallbackId];
                 }
