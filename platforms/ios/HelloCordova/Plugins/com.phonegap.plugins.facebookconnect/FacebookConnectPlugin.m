@@ -401,6 +401,23 @@
             fbparams.caption = [params objectForKey:@"caption"];
             fbparams.picture = [NSURL URLWithString:[params objectForKey:@"picture"]];
             fbparams.linkDescription = [params objectForKey:@"description"];
+
+            // Check for active FB session
+            if([FBSession activeSession].state != FBSessionStateOpen){
+                NSLog(@"No open active FB session, opening new session...");
+
+                BOOL result = [FBSession openActiveSessionWithAllowLoginUI:NO];
+                if(result)
+                {
+                    NSLog(@"Successfully opened new FB session");
+                }
+                else {
+                    NSLog(@"Failed to open new FB session");
+                }
+            }
+            else {
+                NSLog(@"Got open active FB session");
+            }
             // Do we have the messaging app installed?
             if ([FBDialogs canPresentMessageDialogWithParams:fbparams]) {
                 // We cannot use the Web Dialog Builder API, must use FBDialog for messaging
