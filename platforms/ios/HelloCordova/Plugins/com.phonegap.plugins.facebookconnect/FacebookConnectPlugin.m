@@ -401,8 +401,6 @@
             fbparams.caption = [params objectForKey:@"caption"];
             fbparams.picture = [NSURL URLWithString:[params objectForKey:@"picture"]];
             fbparams.linkDescription = [params objectForKey:@"description"];
-
-            // Check for active FB session
             if([FBSession activeSession].state != FBSessionStateOpen){
                 NSLog(@"No open active FB session, opening new session...");
 
@@ -519,6 +517,102 @@
     #endif
 }
 
+- (void) grantPermissions:(CDVInvokedUrlCommand *)command
+{
+    // Save the callback ID
+    self.graphCallbackId = command.callbackId;
+    
+    NSArray *requestedPermissions = [command argumentAtIndex:0];
+    // We will store here the missing permissions that we will have to request
+    NSMutableArray *newPermissions = [[NSMutableArray alloc] initWithArray:@[]];
+    
+    // Check if all the permissions we need are present in the user's current permissions
+    // If they are not present add them to the permissions to be requested
+    for (NSString *permission in requestedPermissions){
+        if (![[[FBSession activeSession] permissions] containsObject:permission]) {
+            [newPermissions addObject:permission];
+        }
+    }
+
+    BOOL publishPermissionFound = NO;
+    BOOL readPermissionFound = NO;
+        
+    for (NSString *p in newPermissions) {
+        if ([self isPublishPermission:p]) {
+            publishPermissionFound = YES;
+        } else {
+            readPermissionFound = YES;
+        }
+        
+        // If we've found one of each we can stop looking.
+        if (publishPermissionFound && readPermissionFound) {
+            break;
+        }
+    }
+
+    // If we have new permissions to request
+    if (publishPermissionFound && readPermissionFound) {
+        CDVPluginResult* pluginResult =
+            [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
+                             messageAsString:@"Your app can't ask for both read and write permissions."];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.graphCallbackId];
+    }
+    else if (readPermissionFound) {
+        // Ask for the missing permissions
+        [FBSession.activeSession
+            requestNewReadPermissions:newPermissions
+            completionHandler:^(FBSession *session, NSError *error) {
+            if (!error) {
+                // Permission granted
+                NSLog(@"new permissions %@", [FBSession.activeSession permissions]);
+                // We can request the user information
+                CDVPluginResult* pluginResult =
+                    [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                         messageAsString:FBSession.activeSession.accessTokenData.accessToken];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:self.graphCallbackId];
+            } else {
+                // An error occurred, we need to handle the error
+                // See: https://developers.facebook.com/docs/ios/errors
+                CDVPluginResult* pluginResult =
+                    [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
+                                     messageAsString:[error localizedDescription]];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:self.graphCallbackId];
+            }
+        }];
+    }
+    else if(publishPermissionFound) {
+        [FBSession.activeSession
+            requestNewPublishPermissions:newPermissions
+            defaultAudience:FBSessionDefaultAudienceFriends
+            completionHandler:^(FBSession *session, NSError *error) {
+            if (!error) {
+                // Permission granted
+                NSLog(@"new permissions %@", [FBSession.activeSession permissions]);
+                // We can request the user information
+                CDVPluginResult* pluginResult =
+                    [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                         messageAsString:FBSession.activeSession.accessTokenData.accessToken];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:self.graphCallbackId];
+            } else {
+                // An error occurred, we need to handle the error
+                // See: https://developers.facebook.com/docs/ios/errors
+                CDVPluginResult* pluginResult =
+                    [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
+                                     messageAsString:[error localizedDescription]];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:self.graphCallbackId];
+            }
+        }];
+    }
+    else {
+        // Permissions are present
+        // We can request the user information
+        CDVPluginResult* pluginResult =
+            [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                             messageAsString:FBSession.activeSession.accessTokenData.accessToken];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.graphCallbackId];
+    }
+}
+
 - (void) graphApi:(CDVInvokedUrlCommand *)command
 {
     // Save the callback ID
@@ -541,19 +635,45 @@
     // If we have permissions to request
     if ([requestPermissions count] > 0){
         // Ask for the missing permissions
-        [FBSession.activeSession
-         requestNewReadPermissions:requestPermissions
-         completionHandler:^(FBSession *session, NSError *error) {
-             if (!error) {
-                 // Permission granted
-                 NSLog(@"new permissions %@", [FBSession.activeSession permissions]);
-                 // We can request the user information
-                 [self makeGraphCall:graphPath];
-             } else {
-                 // An error occurred, we need to handle the error
-                 // See: https://developers.facebook.com/docs/ios/errors
-             }
-         }];
+        if([self areAllPermissionsReadPermissions:requestPermissions]) {
+            [FBSession.activeSession
+                requestNewReadPermissions:requestPermissions
+                completionHandler:^(FBSession *session, NSError *error) {
+                if (!error) {
+                    // Permission granted
+                    NSLog(@"new permissions %@", [FBSession.activeSession permissions]);
+                    // We can request the user information
+                    [self makeGraphCall:graphPath];
+                } else {
+                    // An error occurred, we need to handle the error
+                    // See: https://developers.facebook.com/docs/ios/errors
+                    CDVPluginResult* pluginResult =
+                        [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
+                                         messageAsString:[error localizedDescription]];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:self.graphCallbackId];
+                }
+            }];
+        }
+        else {
+            [FBSession.activeSession
+                requestNewPublishPermissions:requestPermissions
+                defaultAudience:FBSessionDefaultAudienceFriends
+                completionHandler:^(FBSession *session, NSError *error) {
+                if (!error) {
+                    // Permission granted
+                    NSLog(@"new permissions %@", [FBSession.activeSession permissions]);
+                    // We can request the user information
+                    [self makeGraphCall:graphPath];
+                } else {
+                    // An error occurred, we need to handle the error
+                    // See: https://developers.facebook.com/docs/ios/errors
+                    CDVPluginResult* pluginResult =
+                        [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
+                                         messageAsString:[error localizedDescription]];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:self.graphCallbackId];
+                }
+            }];
+        }
     } else {
         // Permissions are present
         // We can request the user information
@@ -563,8 +683,8 @@
 
 - (void) makeGraphCall:(NSString *)graphPath
 {
-    
     NSLog(@"Graph Path = %@", graphPath);
+
     [FBRequestConnection
      startWithGraphPath: graphPath
      completionHandler:^(FBRequestConnection *connection, id result, NSError *error) {
