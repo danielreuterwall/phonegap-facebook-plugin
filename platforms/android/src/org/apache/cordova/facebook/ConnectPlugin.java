@@ -64,6 +64,7 @@ public class ConnectPlugin extends CordovaPlugin {
     private CallbackContext loginContext = null;
     private CallbackContext showDialogContext = null;
     private CallbackContext graphContext = null;
+    private CallbackContext grantPermissionContext = null;
     private Bundle paramBundle;
     private String method;
     private String graphPath;
@@ -151,7 +152,7 @@ public class ConnectPlugin extends CordovaPlugin {
             });
         } else {
             Session session = Session.getActiveSession();
-            if (session != null && loginContext != null) {
+            if (session != null && (loginContext != null || grantPermissionContext != null)) {
                 session.onActivityResult(cordova.getActivity(), requestCode, resultCode, intent);
             }
         }
@@ -560,6 +561,63 @@ public class ConnectPlugin extends CordovaPlugin {
             }
             return true;
         }
+        else if (action.equals("grantPermissions")) {
+            grantPermissionContext = callbackContext;
+            PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
+            pr.setKeepCallback(true);
+            grantPermissionContext.sendPluginResult(pr);
+
+            JSONArray arr = args.getJSONArray(0);
+            final List<String> permissionsList = new ArrayList<String>();
+            for (int i = 0; i < arr.length(); i++) {
+                permissionsList.add(arr.getString(i));
+            }
+
+            boolean publishPermissions = false;
+            boolean readPermissions = false;
+            if (permissionsList.size() > 0) {
+                for (String permission : permissionsList) {
+                    if (isPublishPermission(permission)) {
+                        publishPermissions = true;
+                    } else {
+                        readPermissions = true;
+                    }
+                    // Break if we have a mixed bag, as this is an error
+                    if (publishPermissions && readPermissions) {
+                        break;
+                    }
+                }
+                if (publishPermissions && readPermissions) {
+                    Log.d(TAG, "Cannot ask for both read and publish permissions");
+                    grantPermissionContext.error("Cannot ask for both read and publish permissions.");
+                } else {
+                    Session session = Session.getActiveSession();
+                    if (session.getPermissions().containsAll(permissionsList)) {
+                        Log.d(TAG, "All permissions already granted");
+                        grantPermissionContext.success(session.getAccessToken());
+                    } else {
+                        // Set up the new permissions request
+                        Session.NewPermissionsRequest newPermissionsRequest = new Session.NewPermissionsRequest(cordova.getActivity(), permissionsList);
+                        
+                        // Set up the activity result callback to this class
+                        cordova.setActivityResultCallback(this);
+                        // Check for write permissions, the default is read (empty)
+                        if (publishPermissions) {
+                            // Request new publish permissions
+                            session.requestNewPublishPermissions(newPermissionsRequest);
+                        } else {
+                            // Request new read permissions
+                            session.requestNewReadPermissions(newPermissionsRequest);
+                        }
+                    }
+                }
+            } else {
+                Session session = Session.getActiveSession();
+                grantPermissionContext.success(session.getAccessToken());
+            }
+
+            return true;
+        }
         return false;
     }
 
@@ -720,6 +778,8 @@ public class ConnectPlugin extends CordovaPlugin {
                 } else if (graphContext != null) {
                     // Make the graph call
                     makeGraphCall();
+                } else if (grantPermissionContext != null) {
+                    grantPermissionContext.success(session.getAccessToken());
                 }
             } else if (state == SessionState.CLOSED_LOGIN_FAILED && loginContext != null){
                 handleError(new FacebookAuthorizationException("Session was closed and was not closed normally"), loginContext);
