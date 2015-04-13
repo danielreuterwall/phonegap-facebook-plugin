@@ -48,10 +48,12 @@
         <script type="text/javascript" src="js/facebookConnectPlugin.js"></script>
         <script type="text/javascript">
             var login = function () {
-                if (!window.cordova) {
+                /*
+                 if (!window.cordova) {
                     var appId = prompt("Enter FB Application ID", "");
                     facebookConnectPlugin.browserInit(appId);
                 }
+                */
                 facebookConnectPlugin.login( ["email"], 
                     function (response) { alert(JSON.stringify(response)) },
                     function (response) { alert(JSON.stringify(response)) });
