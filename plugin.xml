@@ -81,6 +81,8 @@
 
         <header-file src="platforms/ios/HelloCordova/Plugins/com.phonegap.plugins.facebookconnect/FacebookConnectPlugin.h" />
         <source-file src="platforms/ios/HelloCordova/Plugins/com.phonegap.plugins.facebookconnect/FacebookConnectPlugin.m" />
+        <header-file src="platforms/ios/HelloCordova/Plugins/com.phonegap.plugins.facebookconnect/AppDelegate+facebook.h" />
+        <source-file src="platforms/ios/HelloCordova/Plugins/com.phonegap.plugins.facebookconnect/AppDelegate+facebook.m" />
 
         <config-file target="*-Info.plist" parent="FacebookAppID">
             <string>$APP_ID</string>
@@ -102,7 +104,10 @@
         </config-file>
 
         <!-- Facebook framework -->
-        <framework src="platforms/ios/FacebookSDK.framework" custom="true" />
+        <framework src="platforms/ios/FBSDKCoreKit.framework" custom="true" />
+        <framework src="platforms/ios/FBSDKLoginKit.framework" custom="true" />
+        <framework src="platforms/ios/FBSDKMessengerShareKit.framework" custom="true" />
+        <framework src="platforms/ios/FBSDKShareKit.framework" custom="true" />
 
         <!-- System frameworks -->
         <framework src="libsqlite3.dylib" />
