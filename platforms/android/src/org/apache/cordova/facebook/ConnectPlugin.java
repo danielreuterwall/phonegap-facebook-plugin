@@ -24,25 +24,24 @@ import org.json.JSONObject;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
+import android.text.TextUtils;
 
-import com.facebook.AppEventsLogger;
+import com.facebook.FacebookSdk;
+import com.facebook.AccessToken;
+import com.facebook.CallbackManager;
+import com.facebook.login.LoginManager;
+import com.facebook.login.LoginResult;
+import com.facebook.FacebookCallback;
+import com.facebook.appevents.AppEventsLogger;
 import com.facebook.FacebookDialogException;
 import com.facebook.FacebookException;
 import com.facebook.FacebookOperationCanceledException;
 import com.facebook.FacebookAuthorizationException;
 import com.facebook.FacebookRequestError;
 import com.facebook.FacebookServiceException;
-import com.facebook.Request;
-import com.facebook.Request.GraphUserCallback;
-import com.facebook.Response;
-import com.facebook.Session;
-import com.facebook.SessionState;
-import com.facebook.UiLifecycleHelper;
-import com.facebook.model.GraphObject;
-import com.facebook.model.GraphUser;
-import com.facebook.widget.FacebookDialog;
-import com.facebook.widget.WebDialog;
-import com.facebook.widget.WebDialog.OnCompleteListener;
+import com.facebook.GraphRequest;
+import com.facebook.GraphResponse;
+import com.facebook.share.widget.*;
 
 public class ConnectPlugin extends CordovaPlugin {
 
@@ -69,14 +68,13 @@ public class ConnectPlugin extends CordovaPlugin {
     private String method;
     private String graphPath;
     private String userID;
-    private UiLifecycleHelper uiHelper;
     private boolean trackingPendingCall = false;
+    private CallbackManager callbackManager;
 
     @Override
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
-        //Initialize UiLifecycleHelper
-        uiHelper = new UiLifecycleHelper(cordova.getActivity(), null);
-
+        FacebookSdk.sdkInitialize(cordova.getActivity().getApplicationContext());
+        callbackManager = CallbackManager.Factory.create();
         // Init logger
         logger = AppEventsLogger.newLogger(cordova.getActivity());
 
@@ -87,74 +85,56 @@ public class ConnectPlugin extends CordovaPlugin {
         cordova.setActivityResultCallback(this);
 
         // Open a session if we have one cached
-        Session session = new Session.Builder(cordova.getActivity()).setApplicationId(applicationId).build();
-        if (session.getState() == SessionState.CREATED_TOKEN_LOADED) {
-            Session.setActiveSession(session);
-            // - Create the request
-            Session.OpenRequest openRequest = new Session.OpenRequest(cordova.getActivity());
-            // - Set the status change call back
-            openRequest.setCallback(new Session.StatusCallback() {
-                @Override
-                public void call(Session session, SessionState state, Exception exception) {
-                    onSessionStateChange(state, exception);
-                }
-            });
-            session.openForRead(openRequest);
-        }
+        // Session session = new Session.Builder(cordova.getActivity()).setApplicationId(applicationId).build();
+        // if (session.getState() == SessionState.CREATED_TOKEN_LOADED) {
+        //     Session.setActiveSession(session);
+        //     // - Create the request
+        //     Session.OpenRequest openRequest = new Session.OpenRequest(cordova.getActivity());
+        //     // - Set the status change call back
+        //     openRequest.setCallback(new Session.StatusCallback() {
+        //         @Override
+        //         public void call(Session session, SessionState state, Exception exception) {
+        //             onSessionStateChange(state, exception);
+        //         }
+        //     });
+        //     session.openForRead(openRequest);
+        // }
 
         // If we have a valid open session, get user's info
-        if (checkActiveSession(session)) {
-            // Call this method to initialize the session state info
-            onSessionStateChange(session.getState(), null);
-        }
+        // if (checkActiveSession(session)) {
+        //     // Call this method to initialize the session state info
+        //     onSessionStateChange(session.getState(), null);
+        // }
         super.initialize(cordova, webView);
     }
 
     @Override
     public void onResume(boolean multitasking) {
         super.onResume(multitasking);
-        uiHelper.onResume();
         // Developers can observe how frequently users activate their app by logging an app activation event.
         AppEventsLogger.activateApp(cordova.getActivity());
     }
 
-    protected void onSaveInstanceState(Bundle outState) {
-        uiHelper.onSaveInstanceState(outState);
-    }
+    // protected void onSaveInstanceState(Bundle outState) {
+    //     uiHelper.onSaveInstanceState(outState);
+    // }
 
-    public void onPause() {
-        uiHelper.onPause();
-    }
+    // public void onPause() {
+    //     uiHelper.onPause();
+    // }
 
-    @Override
-    public void onDestroy() {
-        super.onDestroy();
-        uiHelper.onDestroy();
-    }
+    // @Override
+    // public void onDestroy() {
+    //     super.onDestroy();
+    //     uiHelper.onDestroy();
+    // }
 
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent intent) {
         super.onActivityResult(requestCode, resultCode, intent);
         Log.d(TAG, "activity result in plugin: requestCode(" + requestCode + "), resultCode(" + resultCode + ")");
         if (trackingPendingCall) {
-            uiHelper.onActivityResult(requestCode, resultCode, intent, new FacebookDialog.Callback() {
-                @Override
-                public void onError(FacebookDialog.PendingCall pendingCall, Exception error, Bundle data) {
-                    Log.e("Activity", String.format("Error: %s", error.toString()));
-                    handleError(error, showDialogContext);
-                }
-
-                @Override
-                public void onComplete(FacebookDialog.PendingCall pendingCall, Bundle data) {
-                    Log.i("Activity", "Success!");
-                    handleSuccess(data);
-                }
-            });
-        } else {
-            Session session = Session.getActiveSession();
-            if (session != null && (loginContext != null || grantPermissionContext != null)) {
-                session.onActivityResult(cordova.getActivity(), requestCode, resultCode, intent);
-            }
+            callbackManager.onActivityResult(requestCode, resultCode, intent);
         }
         trackingPendingCall = false;
     }
@@ -174,456 +154,433 @@ public class ConnectPlugin extends CordovaPlugin {
             if (arrayPermissions.length > 0) {
                 permissions = Arrays.asList(arrayPermissions);
             }
-
-            // Get the currently active session
-            Session session = Session.getActiveSession();
-
-            // Set a pending callback to cordova
+            
             loginContext = callbackContext;
-            PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
-            pr.setKeepCallback(true);
-            loginContext.sendPluginResult(pr);
+            if(permissions == null) {
+                PluginResult pr = new PluginResult(PluginResult.Status.ERROR, "No required permissions");
+                loginContext.sendPluginResult(pr);
+                return true;
+            }
 
-            // Check if the active session is open
-            if (checkActiveSession(session)) {
-                // Reauthorize flow
-                boolean publishPermissions = false;
-                boolean readPermissions = false;
-                // Figure out if this will be a read or publish reauthorize
-                if (permissions == null) {
-                    // No permissions, read
+            boolean publishPermissions = false;
+            boolean readPermissions = false;
+
+            //filter out already granted permissions
+            if (checkActiveToken()) {
+                AccessToken accessToken = AccessToken.getCurrentAccessToken();
+                for(String permission : accessToken.getPermissions()) {
+                    permissions.remove(permission);
+                }
+            }
+
+            if(permissions.size() == 0) {
+                PluginResult pr = new PluginResult(PluginResult.Status.OK, getResponse());
+                loginContext.sendPluginResult(pr);
+                return true;
+            }
+
+            // Loop through the permissions to see what
+            // is being requested
+            for (String permission : permissions) {
+                if (isPublishPermission(permission)) {
+                    publishPermissions = true;
+                } else {
                     readPermissions = true;
                 }
-                // Loop through the permissions to see what
-                // is being requested
-                for (String permission : arrayPermissions) {
-                    if (isPublishPermission(permission)) {
-                        publishPermissions = true;
-                    } else {
-                        readPermissions = true;
-                    }
-                    // Break if we have a mixed bag, as this is an error
-                    if (publishPermissions && readPermissions) {
-                        break;
-                    }
-                }
+                // Break if we have a mixed bag, as this is an error
                 if (publishPermissions && readPermissions) {
-                    callbackContext.error("Cannot ask for both read and publish permissions.");
-                } else {
-                    // Set up the new permissions request
-                    Session.NewPermissionsRequest newPermissionsRequest = new Session.NewPermissionsRequest(cordova.getActivity(), permissions);
-                    // Set up the activity result callback to this class
-                    cordova.setActivityResultCallback(this);
-                    // Check for write permissions, the default is read (empty)
-                    if (publishPermissions) {
-                        // Request new publish permissions
-                        session.requestNewPublishPermissions(newPermissionsRequest);
-                    } else {
-                        // Request new read permissions
-                        session.requestNewReadPermissions(newPermissionsRequest);
-                    }
+                    break;
                 }
+            }
+            if (publishPermissions && readPermissions) {
+                callbackContext.error("Cannot ask for both read and publish permissions.");
             } else {
-                // Initial login, build a new session open request.
-
-                // - Create a new session and set the application ID
-                session = new Session.Builder(cordova.getActivity()).setApplicationId(applicationId).build();
-                // Set up the activity result callback to this class
+                PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
+                pr.setKeepCallback(true);
+                loginContext.sendPluginResult(pr);
+                
                 cordova.setActivityResultCallback(this);
+                
+                LoginManager.getInstance().registerCallback(callbackManager,
+                    new FacebookCallback<LoginResult>() {
+                        @Override
+                        public void onSuccess(LoginResult loginResult) {
+                            PluginResult pr = new PluginResult(PluginResult.Status.OK, getResponse());
+                            loginContext.sendPluginResult(pr);
+                        }
 
-                Session.setActiveSession(session);
-                // - Create the request
-                Session.OpenRequest openRequest = new Session.OpenRequest(cordova.getActivity());
-                // - Set the permissions
-                openRequest.setPermissions(permissions);
-                // - Set the status change call back
-                openRequest.setCallback(new Session.StatusCallback() {
-                    @Override
-                    public void call(Session session, SessionState state, Exception exception) {
-                        onSessionStateChange(state, exception);
+                        @Override
+                        public void onCancel() {
+                            PluginResult pr = new PluginResult(PluginResult.Status.ERROR, "User cancelled login");
+                            loginContext.sendPluginResult(pr);
+                        }
+
+                        @Override
+                        public void onError(FacebookException exception) {
+                            PluginResult pr = new PluginResult(PluginResult.Status.ERROR, exception.getMessage());
+                            loginContext.sendPluginResult(pr);
+                        }
                     }
-                });
+                );
 
-                // Can only ask for read permissions initially
-                session.openForRead(openRequest);
+                if (publishPermissions) {
+                    LoginManager.getInstance().logInWithPublishPermissions(
+                        cordova.getActivity(),
+                        Arrays.asList(arrayPermissions)
+                    );
+                } else {
+                    LoginManager.getInstance().logInWithReadPermissions(
+                        cordova.getActivity(),
+                        Arrays.asList(arrayPermissions)
+                    );
+                }
             }
             return true;
         } else if (action.equals("logout")) {
-
-            Session session = Session.getActiveSession();
-            if (checkActiveSession(session)) {
-                session.closeAndClearTokenInformation();
-                userID = null;
-                callbackContext.success();
+            if (checkActiveToken()) {
+                LoginManager loginManager = LoginManager.getInstance();
+                loginManager.logOut();
+                callbackContext.success("User logged out");
             } else {
-                if (session != null) {
-                    // Session was existing, but was not open
-                    callbackContext.error("Session not open.");
-                } else {
-                    callbackContext.error("No valid session found, must call init and login before logout.");
-                }
+                callbackContext.error("No valid session found, must call init and login before logout.");
             }
             return true;
         } else if (action.equals("getLoginStatus")) {
-            Session session = Session.getActiveSession();
-            if (userID == null && Session.getActiveSession() != null  && session.isOpened()) {
-                // We have no userID but a valid session, so must update the user info
-                // (Probably app was force stopped)
-                final CallbackContext _callbackContext = callbackContext;
-                getUserInfo(session, new GraphUserCallback() {
-                    @Override
-                    public void onCompleted(GraphUser user, Response response) {
-                        // Request completed, userID was updated,
-                        // recursive call to generate the correct response JSON
-                        if (response.getError() != null) {
-                            _callbackContext.error(getFacebookRequestErrorResponse(response.getError()));
-                        } else {
-                            userID = user.getId();
-                            _callbackContext.success(getResponse());
-                        }
-                    }
-                });
-            } else {
-                callbackContext.success(getResponse());
-            }
+            callbackContext.success(getResponse());
             return true;
         } else if (action.equals("getAccessToken")) {
-            Session session = Session.getActiveSession();
-            if (checkActiveSession(session)) {
-                callbackContext.success(session.getAccessToken());
+            if (checkActiveToken()) {
+                callbackContext.success(AccessToken.getCurrentAccessToken().getToken());
             } else {
-                if (session == null) {
-                    callbackContext.error("No valid session found, must call init and login before logout.");
-                } else {
-                    // Session not open
-                    callbackContext.error("Session not open.");
-                }
+                callbackContext.error("No valid session found, must call init and login before logout.");
             }
             return true;
-        } else if (action.equals("logEvent")) {
-            if (args.length() == 0) {
-                // Not enough parameters
-                callbackContext.error("Invalid arguments");
-                return true;
-            }
-            String eventName = args.getString(0);
-            if (args.length() == 1) {
-                logger.logEvent(eventName);
-            } else {
-                // Arguments is greater than 1
-                JSONObject params = args.getJSONObject(1);
-                Bundle parameters = new Bundle();
+        }
+        // else if (action.equals("logEvent")) {
+        //     if (args.length() == 0) {
+        //         // Not enough parameters
+        //         callbackContext.error("Invalid arguments");
+        //         return true;
+        //     }
+        //     String eventName = args.getString(0);
+        //     if (args.length() == 1) {
+        //         logger.logEvent(eventName);
+        //     } else {
+        //         // Arguments is greater than 1
+        //         JSONObject params = args.getJSONObject(1);
+        //         Bundle parameters = new Bundle();
 
-                Iterator<?> iterator = params.keys();
-                while (iterator.hasNext()) {
-                    try {
-                        // Try get a String
-                        String key = (String) iterator.next();
-                        String value = params.getString(key);
-                        parameters.putString(key, value);
-                    } catch (Exception e) {
-                        // Maybe it was an int
-                        Log.w(TAG, "Type in AppEvent parameters was not String for key: " + (String) iterator.next());
-                        try {
-                            String key = (String) iterator.next();
-                            int value = params.getInt(key);
-                            parameters.putInt(key, value);
-                        } catch (Exception e2) {
-                            // Nope
-                            Log.e(TAG, "Unsupported type in AppEvent parameters for key: " + (String) iterator.next());
-                        }
-                    }
-                }
-                if (args.length() == 2) {
-                    logger.logEvent(eventName, parameters);
-                }
-                if (args.length() == 3) {
-                    double value = args.getDouble(2);
-                    logger.logEvent(eventName, value, parameters);
-                }
-            }
-            callbackContext.success();
-            return true;
-        } else if (action.equals("logPurchase")) {
-            /*
-             * While calls to logEvent can be made to register purchase events,
-             * there is a helper method that explicitly takes a currency indicator.
-             */
-            if (args.length() != 2) {
-                callbackContext.error("Invalid arguments");
-                return true;
-            }
-            int value = args.getInt(0);
-            String currency = args.getString(1);
-            logger.logPurchase(BigDecimal.valueOf(value), Currency.getInstance(currency));
-            callbackContext.success();
-            return true;
-        } else if (action.equals("showDialog")) {
-            Bundle collect = new Bundle();
-            JSONObject params = null;
-            try {
-                params = args.getJSONObject(0);
-            } catch (JSONException e) {
-                params = new JSONObject();
-            }
+        //         Iterator<?> iterator = params.keys();
+        //         while (iterator.hasNext()) {
+        //             try {
+        //                 // Try get a String
+        //                 String key = (String) iterator.next();
+        //                 String value = params.getString(key);
+        //                 parameters.putString(key, value);
+        //             } catch (Exception e) {
+        //                 // Maybe it was an int
+        //                 Log.w(TAG, "Type in AppEvent parameters was not String for key: " + (String) iterator.next());
+        //                 try {
+        //                     String key = (String) iterator.next();
+        //                     int value = params.getInt(key);
+        //                     parameters.putInt(key, value);
+        //                 } catch (Exception e2) {
+        //                     // Nope
+        //                     Log.e(TAG, "Unsupported type in AppEvent parameters for key: " + (String) iterator.next());
+        //                 }
+        //             }
+        //         }
+        //         if (args.length() == 2) {
+        //             logger.logEvent(eventName, parameters);
+        //         }
+        //         if (args.length() == 3) {
+        //             double value = args.getDouble(2);
+        //             logger.logEvent(eventName, value, parameters);
+        //         }
+        //     }
+        //     callbackContext.success();
+        //     return true;
+        // } else if (action.equals("logPurchase")) {
+        //     /*
+        //      * While calls to logEvent can be made to register purchase events,
+        //      * there is a helper method that explicitly takes a currency indicator.
+        //      */
+        //     if (args.length() != 2) {
+        //         callbackContext.error("Invalid arguments");
+        //         return true;
+        //     }
+        //     int value = args.getInt(0);
+        //     String currency = args.getString(1);
+        //     logger.logPurchase(BigDecimal.valueOf(value), Currency.getInstance(currency));
+        //     callbackContext.success();
+        //     return true;
+        // }
+        // else if (action.equals("showDialog")) {
+        //     Bundle collect = new Bundle();
+        //     JSONObject params = null;
+        //     try {
+        //         params = args.getJSONObject(0);
+        //     } catch (JSONException e) {
+        //         params = new JSONObject();
+        //     }
 
-            final ConnectPlugin me = this;
-            Iterator<?> iter = params.keys();
-            while (iter.hasNext()) {
-                String key = (String) iter.next();
-                if (key.equals("method")) {
-                    try {
-                        this.method = params.getString(key);
-                    } catch (JSONException e) {
-                        Log.w(TAG, "Nonstring method parameter provided to dialog");
-                    }
-                } else {
-                    try {
-                        collect.putString(key, params.getString(key));
-                    } catch (JSONException e) {
-                        // Need to handle JSON parameters
-                        Log.w(TAG, "Nonstring parameter provided to dialog discarded");
-                    }
-                }
-            }
-            this.paramBundle = new Bundle(collect);
+        //     final ConnectPlugin me = this;
+        //     Iterator<?> iter = params.keys();
+        //     while (iter.hasNext()) {
+        //         String key = (String) iter.next();
+        //         if (key.equals("method")) {
+        //             try {
+        //                 this.method = params.getString(key);
+        //             } catch (JSONException e) {
+        //                 Log.w(TAG, "Nonstring method parameter provided to dialog");
+        //             }
+        //         } else {
+        //             try {
+        //                 collect.putString(key, params.getString(key));
+        //             } catch (JSONException e) {
+        //                 // Need to handle JSON parameters
+        //                 Log.w(TAG, "Nonstring parameter provided to dialog discarded");
+        //             }
+        //         }
+        //     }
+        //     this.paramBundle = new Bundle(collect);
             
-            //The Share dialog prompts a person to publish an individual story or an Open Graph story to their timeline.
-            //This does not require Facebook Login or any extended permissions, so it is the easiest way to enable sharing on web.
-            boolean isShareDialog = this.method.equalsIgnoreCase("share") || this.method.equalsIgnoreCase("share_open_graph");
-            //If is a Share dialog but FB app is not installed the WebDialog Builder fails. 
-            //In Android all WebDialogs require a not null Session object.
-            boolean canPresentShareDialog = isShareDialog && (FacebookDialog.canPresentShareDialog(me.cordova.getActivity(), FacebookDialog.ShareDialogFeature.SHARE_DIALOG));
-            //Must be an active session when is not a Shared dialog or if the Share dialog cannot be presented.
-            boolean requiresAnActiveSession = (!isShareDialog) || (!canPresentShareDialog);
-            if (requiresAnActiveSession) {
-                Session session = Session.getActiveSession();
-                if (!checkActiveSession(session)) {
-                    callbackContext.error("No active session");
-                    return true;
-                }
-            }
+        //     //The Share dialog prompts a person to publish an individual story or an Open Graph story to their timeline.
+        //     //This does not require Facebook Login or any extended permissions, so it is the easiest way to enable sharing on web.
+        //     boolean isShareDialog = this.method.equalsIgnoreCase("share") || this.method.equalsIgnoreCase("share_open_graph");
+        //     //If is a Share dialog but FB app is not installed the WebDialog Builder fails. 
+        //     //In Android all WebDialogs require a not null Session object.
+        //     boolean canPresentShareDialog = isShareDialog && (FacebookDialog.canPresentShareDialog(me.cordova.getActivity(), FacebookDialog.ShareDialogFeature.SHARE_DIALOG));
+        //     //Must be an active session when is not a Shared dialog or if the Share dialog cannot be presented.
+        //     boolean requiresAnActiveSession = (!isShareDialog) || (!canPresentShareDialog);
+        //     if (requiresAnActiveSession) {
+        //         if (!checkActiveToken()) {
+        //             callbackContext.error("No active session");
+        //             return true;
+        //         }
+        //     }
 
-            // Begin by sending a callback pending notice to Cordova
-            showDialogContext = callbackContext;
-            PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
-            pr.setKeepCallback(true);
-            showDialogContext.sendPluginResult(pr);
+        //     // Begin by sending a callback pending notice to Cordova
+        //     showDialogContext = callbackContext;
+        //     PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
+        //     pr.setKeepCallback(true);
+        //     showDialogContext.sendPluginResult(pr);
 
-            // Setup callback context
-            final OnCompleteListener dialogCallback = new OnCompleteListener() {
+        //     // Setup callback context
+        //     final OnCompleteListener dialogCallback = new OnCompleteListener() {
 
-                @Override
-                public void onComplete(Bundle values, FacebookException exception) {
-                    if (exception != null) {
-                        handleError(exception, showDialogContext);
-                    } else {
-                        handleSuccess(values);
-                    }
-                }
-            };
+        //         @Override
+        //         public void onComplete(Bundle values, FacebookException exception) {
+        //             if (exception != null) {
+        //                 handleError(exception, showDialogContext);
+        //             } else {
+        //                 handleSuccess(values);
+        //             }
+        //         }
+        //     };
 
-            if (this.method.equalsIgnoreCase("feed")) {
-                Runnable runnable = new Runnable() {
-                    public void run() {
-                        WebDialog feedDialog = (new WebDialog.FeedDialogBuilder(me.cordova.getActivity(), Session.getActiveSession(), paramBundle)).setOnCompleteListener(dialogCallback).build();
-                        feedDialog.show();
-                    }
-                };
-                cordova.getActivity().runOnUiThread(runnable);
-            } else if (this.method.equalsIgnoreCase("apprequests")) {
-                Runnable runnable = new Runnable() {
-                    public void run() {
-                        WebDialog requestsDialog = (new WebDialog.RequestsDialogBuilder(me.cordova.getActivity(), Session.getActiveSession(), paramBundle)).setOnCompleteListener(dialogCallback)
-                            .build();
-                        requestsDialog.show();
-                    }
-                };
-                cordova.getActivity().runOnUiThread(runnable);
-            } else if (isShareDialog) {
-                if (canPresentShareDialog) {
-                    Runnable runnable = new Runnable() {
-                        public void run() {
-                            // Publish the post using the Share Dialog
-                            FacebookDialog shareDialog = new FacebookDialog.ShareDialogBuilder(me.cordova.getActivity())
-                                .setName(paramBundle.getString("name"))
-                                .setCaption(paramBundle.getString("caption"))
-                                .setDescription(paramBundle.getString("description"))
-                                .setLink(paramBundle.getString("href"))
-                                .setPicture(paramBundle.getString("picture"))
-                                .build();
-                            uiHelper.trackPendingDialogCall(shareDialog.present());
-                        }
-                    };
-                    this.trackingPendingCall = true;
-                    cordova.getActivity().runOnUiThread(runnable);
-                } else {
-                    // Fallback. For example, publish the post using the Feed Dialog
-                    Runnable runnable = new Runnable() {
-                        public void run() {
-                            WebDialog feedDialog = (new WebDialog.FeedDialogBuilder(me.cordova.getActivity(), Session.getActiveSession(), paramBundle)).setOnCompleteListener(dialogCallback).build();
-                            feedDialog.show();
-                        }
-                    };
-                    cordova.getActivity().runOnUiThread(runnable);
-                }
-            } else if (this.method.equalsIgnoreCase("send")) {
-                Runnable runnable = new Runnable() {
-                    public void run() {
-                        FacebookDialog.MessageDialogBuilder builder = new FacebookDialog.MessageDialogBuilder(me.cordova.getActivity());
-                        if(paramBundle.containsKey("link"))
-                            builder.setLink(paramBundle.getString("link"));
-                        if(paramBundle.containsKey("caption"))
-                            builder.setCaption(paramBundle.getString("caption"));
-                        if(paramBundle.containsKey("name"))
-                            builder.setName(paramBundle.getString("name"));
-                        if(paramBundle.containsKey("picture"))
-                            builder.setPicture(paramBundle.getString("picture"));
-                        if(paramBundle.containsKey("description"))
-                            builder.setDescription(paramBundle.getString("description"));
-                        // Check for native FB Messenger application
-                        if (builder.canPresent()) {
-                            if("true".equals(paramBundle.getString("peek"))) {
-                                Log.v(TAG, "Invoking callback due to peek param");
-                                showDialogContext.success("Messaging available");
-                            }
-                            else {
-                                FacebookDialog dialog = builder.build();
-                                dialog.present();
-                            }
-                        }  else {
-                            // Not found
-                            trackingPendingCall = false;
-                            String errMsg = "Messaging unavailable.";
-                            Log.e(TAG, errMsg);
-                            showDialogContext.error(errMsg);
-                        }
-                    };
-                };
-                this.trackingPendingCall = true;
-                cordova.getActivity().runOnUiThread(runnable);
-            } else {
-                callbackContext.error("Unsupported dialog method.");
-            }
-            return true;
-        } else if (action.equals("graphApi")) {
-            graphContext = callbackContext;
-            PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
-            pr.setKeepCallback(true);
-            graphContext.sendPluginResult(pr);
+        //     if (this.method.equalsIgnoreCase("feed")) {
+        //         Runnable runnable = new Runnable() {
+        //             public void run() {
+        //                 WebDialog feedDialog = (new WebDialog.FeedDialogBuilder(me.cordova.getActivity(), Session.getActiveSession(), paramBundle)).setOnCompleteListener(dialogCallback).build();
+        //                 feedDialog.show();
+        //             }
+        //         };
+        //         cordova.getActivity().runOnUiThread(runnable);
+        //     } else if (this.method.equalsIgnoreCase("apprequests")) {
+        //         Runnable runnable = new Runnable() {
+        //             public void run() {
+        //                 WebDialog requestsDialog = (new WebDialog.RequestsDialogBuilder(me.cordova.getActivity(), Session.getActiveSession(), paramBundle)).setOnCompleteListener(dialogCallback)
+        //                     .build();
+        //                 requestsDialog.show();
+        //             }
+        //         };
+        //         cordova.getActivity().runOnUiThread(runnable);
+        //     } else if (isShareDialog) {
+        //         if (canPresentShareDialog) {
+        //             Runnable runnable = new Runnable() {
+        //                 public void run() {
+        //                     // Publish the post using the Share Dialog
+        //                     FacebookDialog shareDialog = new FacebookDialog.ShareDialogBuilder(me.cordova.getActivity())
+        //                         .setName(paramBundle.getString("name"))
+        //                         .setCaption(paramBundle.getString("caption"))
+        //                         .setDescription(paramBundle.getString("description"))
+        //                         .setLink(paramBundle.getString("href"))
+        //                         .setPicture(paramBundle.getString("picture"))
+        //                         .build();
+        //                     uiHelper.trackPendingDialogCall(shareDialog.present());
+        //                 }
+        //             };
+        //             this.trackingPendingCall = true;
+        //             cordova.getActivity().runOnUiThread(runnable);
+        //         } else {
+        //             // Fallback. For example, publish the post using the Feed Dialog
+        //             Runnable runnable = new Runnable() {
+        //                 public void run() {
+        //                     WebDialog feedDialog = (new WebDialog.FeedDialogBuilder(me.cordova.getActivity(), Session.getActiveSession(), paramBundle)).setOnCompleteListener(dialogCallback).build();
+        //                     feedDialog.show();
+        //                 }
+        //             };
+        //             cordova.getActivity().runOnUiThread(runnable);
+        //         }
+        //     } else if (this.method.equalsIgnoreCase("send")) {
+        //         Runnable runnable = new Runnable() {
+        //             public void run() {
+        //                 FacebookDialog.MessageDialogBuilder builder = new FacebookDialog.MessageDialogBuilder(me.cordova.getActivity());
+        //                 if(paramBundle.containsKey("link"))
+        //                     builder.setLink(paramBundle.getString("link"));
+        //                 if(paramBundle.containsKey("caption"))
+        //                     builder.setCaption(paramBundle.getString("caption"));
+        //                 if(paramBundle.containsKey("name"))
+        //                     builder.setName(paramBundle.getString("name"));
+        //                 if(paramBundle.containsKey("picture"))
+        //                     builder.setPicture(paramBundle.getString("picture"));
+        //                 if(paramBundle.containsKey("description"))
+        //                     builder.setDescription(paramBundle.getString("description"));
+        //                 // Check for native FB Messenger application
+        //                 if (builder.canPresent()) {
+        //                     if("true".equals(paramBundle.getString("peek"))) {
+        //                         Log.v(TAG, "Invoking callback due to peek param");
+        //                         showDialogContext.success("Messaging available");
+        //                     }
+        //                     else {
+        //                         FacebookDialog dialog = builder.build();
+        //                         dialog.present();
+        //                     }
+        //                 }  else {
+        //                     // Not found
+        //                     trackingPendingCall = false;
+        //                     String errMsg = "Messaging unavailable.";
+        //                     Log.e(TAG, errMsg);
+        //                     showDialogContext.error(errMsg);
+        //                 }
+        //             };
+        //         };
+        //         this.trackingPendingCall = true;
+        //         cordova.getActivity().runOnUiThread(runnable);
+        //     } else {
+        //         callbackContext.error("Unsupported dialog method.");
+        //     }
+        //    return true;
+        // }
+        // else if (action.equals("graphApi")) {
+        //     graphContext = callbackContext;
+        //     PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
+        //     pr.setKeepCallback(true);
+        //     graphContext.sendPluginResult(pr);
 
-            graphPath = args.getString(0);
+        //     graphPath = args.getString(0);
 
-            JSONArray arr = args.getJSONArray(1);
+        //     JSONArray arr = args.getJSONArray(1);
 
-            final List<String> permissionsList = new ArrayList<String>();
-            for (int i = 0; i < arr.length(); i++) {
-                permissionsList.add(arr.getString(i));
-            }
+        //     final List<String> permissionsList = new ArrayList<String>();
+        //     for (int i = 0; i < arr.length(); i++) {
+        //         permissionsList.add(arr.getString(i));
+        //     }
 
-            boolean publishPermissions = false;
-            boolean readPermissions = false;
-            if (permissionsList.size() > 0) {
-                for (String permission : permissionsList) {
-                    if (isPublishPermission(permission)) {
-                        publishPermissions = true;
-                    } else {
-                        readPermissions = true;
-                    }
-                    // Break if we have a mixed bag, as this is an error
-                    if (publishPermissions && readPermissions) {
-                        break;
-                    }
-                }
-                if (publishPermissions && readPermissions) {
-                    graphContext.error("Cannot ask for both read and publish permissions.");
-                } else {
-                    Session session = Session.getActiveSession();
-                    if (session.getPermissions().containsAll(permissionsList)) {
-                        makeGraphCall();
-                    } else {
-                        // Set up the new permissions request
-                        Session.NewPermissionsRequest newPermissionsRequest = new Session.NewPermissionsRequest(cordova.getActivity(), permissionsList);
-                        // Set up the activity result callback to this class
-                        cordova.setActivityResultCallback(this);
-                        // Check for write permissions, the default is read (empty)
-                        if (publishPermissions) {
-                            // Request new publish permissions
-                            session.requestNewPublishPermissions(newPermissionsRequest);
-                        } else {
-                            // Request new read permissions
-                            session.requestNewReadPermissions(newPermissionsRequest);
-                        }
-                    }
-                }
-            } else {
-                makeGraphCall();
-            }
-            return true;
-        }
-        else if (action.equals("grantPermissions")) {
-            grantPermissionContext = callbackContext;
-            PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
-            pr.setKeepCallback(true);
-            grantPermissionContext.sendPluginResult(pr);
+        //     boolean publishPermissions = false;
+        //     boolean readPermissions = false;
+        //     if (permissionsList.size() > 0) {
+        //         for (String permission : permissionsList) {
+        //             if (isPublishPermission(permission)) {
+        //                 publishPermissions = true;
+        //             } else {
+        //                 readPermissions = true;
+        //             }
+        //             // Break if we have a mixed bag, as this is an error
+        //             if (publishPermissions && readPermissions) {
+        //                 break;
+        //             }
+        //         }
+        //         if (publishPermissions && readPermissions) {
+        //             graphContext.error("Cannot ask for both read and publish permissions.");
+        //         } else {
+        //             Session session = Session.getActiveSession();
+        //             if (session.getPermissions().containsAll(permissionsList)) {
+        //                 makeGraphCall();
+        //             } else {
+        //                 // Set up the new permissions request
+        //                 Session.NewPermissionsRequest newPermissionsRequest = new Session.NewPermissionsRequest(cordova.getActivity(), permissionsList);
+        //                 // Set up the activity result callback to this class
+        //                 cordova.setActivityResultCallback(this);
+        //                 // Check for write permissions, the default is read (empty)
+        //                 if (publishPermissions) {
+        //                     // Request new publish permissions
+        //                     session.requestNewPublishPermissions(newPermissionsRequest);
+        //                 } else {
+        //                     // Request new read permissions
+        //                     session.requestNewReadPermissions(newPermissionsRequest);
+        //                 }
+        //             }
+        //         }
+        //     } else {
+        //         makeGraphCall();
+        //     }
+        //     return true;
+        // }
+        // else if (action.equals("grantPermissions")) {
+        //     grantPermissionContext = callbackContext;
+        //     PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
+        //     pr.setKeepCallback(true);
+        //     grantPermissionContext.sendPluginResult(pr);
 
-            JSONArray arr = args.getJSONArray(0);
-            final List<String> permissionsList = new ArrayList<String>();
-            for (int i = 0; i < arr.length(); i++) {
-                permissionsList.add(arr.getString(i));
-            }
+        //     JSONArray arr = args.getJSONArray(0);
+        //     final List<String> permissionsList = new ArrayList<String>();
+        //     for (int i = 0; i < arr.length(); i++) {
+        //         permissionsList.add(arr.getString(i));
+        //     }
 
-            boolean publishPermissions = false;
-            boolean readPermissions = false;
-            if (permissionsList.size() > 0) {
-                for (String permission : permissionsList) {
-                    if (isPublishPermission(permission)) {
-                        publishPermissions = true;
-                    } else {
-                        readPermissions = true;
-                    }
-                    // Break if we have a mixed bag, as this is an error
-                    if (publishPermissions && readPermissions) {
-                        break;
-                    }
-                }
-                if (publishPermissions && readPermissions) {
-                    Log.d(TAG, "Cannot ask for both read and publish permissions");
-                    grantPermissionContext.error("Cannot ask for both read and publish permissions.");
-                } else {
-                    Session session = Session.getActiveSession();
-                    if (session.getPermissions().containsAll(permissionsList)) {
-                        Log.d(TAG, "All permissions already granted");
-                        grantPermissionContext.success(session.getAccessToken());
-                    } else {
-                        // Set up the new permissions request
-                        Session.NewPermissionsRequest newPermissionsRequest = new Session.NewPermissionsRequest(cordova.getActivity(), permissionsList);
+        //     boolean publishPermissions = false;
+        //     boolean readPermissions = false;
+        //     if (permissionsList.size() > 0) {
+        //         for (String permission : permissionsList) {
+        //             if (isPublishPermission(permission)) {
+        //                 publishPermissions = true;
+        //             } else {
+        //                 readPermissions = true;
+        //             }
+        //             // Break if we have a mixed bag, as this is an error
+        //             if (publishPermissions && readPermissions) {
+        //                 break;
+        //             }
+        //         }
+        //         if (publishPermissions && readPermissions) {
+        //             Log.d(TAG, "Cannot ask for both read and publish permissions");
+        //             grantPermissionContext.error("Cannot ask for both read and publish permissions.");
+        //         } else {
+        //             Session session = Session.getActiveSession();
+        //             if (session.getPermissions().containsAll(permissionsList)) {
+        //                 Log.d(TAG, "All permissions already granted");
+        //                 grantPermissionContext.success(session.getAccessToken());
+        //             } else {
+        //                 // Set up the new permissions request
+        //                 Session.NewPermissionsRequest newPermissionsRequest = new Session.NewPermissionsRequest(cordova.getActivity(), permissionsList);
                         
-                        // Set up the activity result callback to this class
-                        cordova.setActivityResultCallback(this);
-                        // Check for write permissions, the default is read (empty)
-                        if (publishPermissions) {
-                            // Request new publish permissions
-                            session.requestNewPublishPermissions(newPermissionsRequest);
-                        } else {
-                            // Request new read permissions
-                            session.requestNewReadPermissions(newPermissionsRequest);
-                        }
-                    }
-                }
-            } else {
-                Session session = Session.getActiveSession();
-                grantPermissionContext.success(session.getAccessToken());
-            }
+        //                 // Set up the activity result callback to this class
+        //                 cordova.setActivityResultCallback(this);
+        //                 // Check for write permissions, the default is read (empty)
+        //                 if (publishPermissions) {
+        //                     // Request new publish permissions
+        //                     session.requestNewPublishPermissions(newPermissionsRequest);
+        //                 } else {
+        //                     // Request new read permissions
+        //                     session.requestNewReadPermissions(newPermissionsRequest);
+        //                 }
+        //             }
+        //         }
+        //     } else {
+        //         Session session = Session.getActiveSession();
+        //         grantPermissionContext.success(session.getAccessToken());
+        //     }
 
-            return true;
-        }
+        //     return true;
+        // }
         return false;
     }
 
-    // Simple active session check
-    private boolean checkActiveSession(Session session) {
-        if (session != null && session.isOpened()) {
+    private boolean checkActiveToken() {
+        AccessToken token = AccessToken.getCurrentAccessToken();
+        if (token != null && !token.isExpired()) {
             return true;
         } else {
             return false;
@@ -683,109 +640,107 @@ public class ConnectPlugin extends CordovaPlugin {
         }
     }
 
-    private void getUserInfo(final Session session, final Request.GraphUserCallback graphUserCb) {
-        if (cordova != null) {
-            Request.newMeRequest(session, graphUserCb).executeAsync();
-        }
-    }
+    // private void getUserInfo(final GraphRequest.GraphJSONObjectCallback graphUserCb) {
+    //     if (cordova != null) {
+    //         GraphRequest.newMeRequest(AccessToken.getCurrentAccessToken(), graphUserCb).executeAsync();
+    //     }
+    // }
 
-    private void makeGraphCall() {
-        Session session = Session.getActiveSession();
+    // private void makeGraphCall() {
+    //     GraphRequest.Callback graphCallback = new GraphRequest.Callback() {
 
-        Request.Callback graphCallback = new Request.Callback() {
+    //         @Override
+    //         public void onCompleted(Response response) {
+    //             if (graphContext != null) {
+    //                 if (response.getError() != null) {
+    //                     graphContext.error(getFacebookRequestErrorResponse(response.getError()));
+    //                 } else {
+    //                     JSONObject graphObject = response.getGraphObject();
+    //                     graphContext.success(graphObject.getInnerJSONObject());
+    //                 }
+    //                 graphPath = null;
+    //                 graphContext = null;
+    //             }
+    //         }
+    //     };
 
-            @Override
-            public void onCompleted(Response response) {
-                if (graphContext != null) {
-                    if (response.getError() != null) {
-                        graphContext.error(getFacebookRequestErrorResponse(response.getError()));
-                    } else {
-                        GraphObject graphObject = response.getGraphObject();
-                        graphContext.success(graphObject.getInnerJSONObject());
-                    }
-                    graphPath = null;
-                    graphContext = null;
-                }
-            }
-        };
+    //     //If you're using the paging URLs they will be URLEncoded, let's decode them.
+    //     try {
+    //         graphPath = URLDecoder.decode(graphPath, "UTF-8");
+    //     } catch (UnsupportedEncodingException e) {
+    //         e.printStackTrace();
+    //     }
 
-        //If you're using the paging URLs they will be URLEncoded, let's decode them.
-        try {
-            graphPath = URLDecoder.decode(graphPath, "UTF-8");
-        } catch (UnsupportedEncodingException e) {
-            e.printStackTrace();
-        }
+    //     String[] urlParts = graphPath.split("\\?");
+    //     String graphAction = urlParts[0];
+    //     GraphRequest graphRequest = GraphRequest.newGraphPathRequest(null, graphAction, graphCallback);
+    //     Bundle params = graphRequest.getParameters();
 
-        String[] urlParts = graphPath.split("\\?");
-        String graphAction = urlParts[0];
-        Request graphRequest = Request.newGraphPathRequest(null, graphAction, graphCallback);
-        Bundle params = graphRequest.getParameters();
+    //     if (urlParts.length > 1) {
+    //         String[] queries = urlParts[1].split("&");
 
-        if (urlParts.length > 1) {
-            String[] queries = urlParts[1].split("&");
+    //         for (String query : queries) {
+    //             int splitPoint = query.indexOf("=");
+    //             if (splitPoint > 0) {
+    //                 String key = query.substring(0, splitPoint);
+    //                 String value = query.substring(splitPoint + 1, query.length());
+    //                 params.putString(key, value);
+    //             }
+    //         }
+    //     }
+    //     params.putString("access_token", session.getAccessToken());
 
-            for (String query : queries) {
-                int splitPoint = query.indexOf("=");
-                if (splitPoint > 0) {
-                    String key = query.substring(0, splitPoint);
-                    String value = query.substring(splitPoint + 1, query.length());
-                    params.putString(key, value);
-                }
-            }
-        }
-        params.putString("access_token", session.getAccessToken());
-
-        graphRequest.setParameters(params);
-        graphRequest.executeAsync();
-    }
+    //     graphRequest.setParameters(params);
+    //     graphRequest.executeAsync();
+    // }
 
     /*
      * Handles session state changes
      */
-    private void onSessionStateChange(SessionState state, Exception exception) {
-        Log.d(TAG, "onSessionStateChange:" + state.toString());
-        if (exception != null && exception instanceof FacebookOperationCanceledException) {
-            // only handle FacebookOperationCanceledException to support
-            // SDK recovery behavior triggered by getUserInfo
-            Log.e(TAG, "exception:" + exception.toString());
-            handleError(exception, loginContext);
-        } else {
-            final Session session = Session.getActiveSession();
-            // Check if the session is open
-            if (state.isOpened()) {
-                if (loginContext != null) {
-                    // Get user info
-                    getUserInfo(session, new Request.GraphUserCallback() {
-                        @Override
-                        public void onCompleted(GraphUser user, Response response) {
-                            // Create a new result with response data
-                            if (loginContext != null) {
-                                if (response.getError() != null) {
-                                    loginContext.error(getFacebookRequestErrorResponse(response.getError()));
-                                } else {
-                                    GraphObject graphObject = response.getGraphObject();
-                                    Log.d(TAG, "returning login object " + graphObject.getInnerJSONObject().toString());
-                                    userID = user.getId();
-                                    loginContext.success(getResponse());
-                                    loginContext = null;
-                                }
-                            } else {
-                                // Just update the userID in case we force quit the application before
-                                userID = user.getId();
-                            }
-                        }
-                    });
-                } else if (graphContext != null) {
-                    // Make the graph call
-                    makeGraphCall();
-                } else if (grantPermissionContext != null) {
-                    grantPermissionContext.success(session.getAccessToken());
-                }
-            } else if (state == SessionState.CLOSED_LOGIN_FAILED && loginContext != null){
-                handleError(new FacebookAuthorizationException("Session was closed and was not closed normally"), loginContext);
-            }
-        }
-    }
+    // private void onSessionStateChange(SessionState state, Exception exception) {
+    //     Log.d(TAG, "onSessionStateChange:" + state.toString());
+    //     if (exception != null && exception instanceof FacebookOperationCanceledException) {
+    //         // only handle FacebookOperationCanceledException to support
+    //         // SDK recovery behavior triggered by getUserInfo
+    //         Log.e(TAG, "exception:" + exception.toString());
+    //         handleError(exception, loginContext);
+    //     } else {
+    //         final Session session = Session.getActiveSession();
+    //         // Check if the session is open
+    //         if (state.isOpened()) {
+    //             if (loginContext != null) {
+    //                 // Get user info
+    //                 getUserInfo(session, new GraphRequest.GraphJSONObjectCallback() {
+    //                     @Override
+    //                     public void onCompleted(JSONObject user, Response response) {
+    //                         // Create a new result with response data
+    //                         if (loginContext != null) {
+    //                             if (response.getError() != null) {
+    //                                 loginContext.error(getFacebookRequestErrorResponse(response.getError()));
+    //                             } else {
+    //                                 JSONObject graphObject = response.getGraphObject();
+    //                                 Log.d(TAG, "returning login object " + graphObject.getInnerJSONObject().toString());
+    //                                 userID = user.getId();
+    //                                 loginContext.success(getResponse());
+    //                                 loginContext = null;
+    //                             }
+    //                         } else {
+    //                             // Just update the userID in case we force quit the application before
+    //                             userID = user.getId();
+    //                         }
+    //                     }
+    //                 });
+    //             } else if (graphContext != null) {
+    //                 // Make the graph call
+    //                 makeGraphCall();
+    //             } else if (grantPermissionContext != null) {
+    //                 grantPermissionContext.success(session.getAccessToken());
+    //             }
+    //         } else if (state == SessionState.CLOSED_LOGIN_FAILED && loginContext != null){
+    //             handleError(new FacebookAuthorizationException("Session was closed and was not closed normally"), loginContext);
+    //         }
+    //     }
+    // }
 
     /*
      * Checks for publish permissions
@@ -799,63 +754,48 @@ public class ConnectPlugin extends CordovaPlugin {
      * @return JSONObject - the response object
      */
     public JSONObject getResponse() {
-        String response;
-        final Session session = Session.getActiveSession();
-        if (checkActiveSession(session)) {
-            Date today = new Date();
-            long expiresTimeInterval = (session.getExpirationDate().getTime() - today.getTime()) / 1000L;
-            long expiresIn = (expiresTimeInterval > 0) ? expiresTimeInterval : 0;
-            response = "{"
-                + "\"status\": \"connected\","
-                + "\"authResponse\": {"
-                + "\"accessToken\": \"" + session.getAccessToken() + "\","
-                + "\"expiresIn\": \"" + expiresIn + "\","
-                + "\"session_key\": true,"
-                + "\"sig\": \"...\","
-                + "\"userID\": \"" + userID + "\""
-                + "}"
-                + "}";
-        } else {
-            response = "{"
-                + "\"status\": \"unknown\""
-                + "}";
-        }
         try {
-            return new JSONObject(response);
-        } catch (JSONException e) {
-
-            e.printStackTrace();
+            JSONObject response = new JSONObject();
+            if (checkActiveToken()) {
+                AccessToken accessToken = AccessToken.getCurrentAccessToken();
+                Date today = new Date();
+                long expiresTimeInterval = (accessToken.getExpires().getTime() - today.getTime()) / 1000L;
+                long expiresIn = (expiresTimeInterval > 0) ? expiresTimeInterval : 0;
+                
+                response.put("status", "connected");
+                JSONObject authResponse = new JSONObject();
+                authResponse.put("accessToken", accessToken.getToken());
+                authResponse.put("expiresIn", expiresIn);
+                authResponse.put("userID", accessToken.getUserId());
+                authResponse.put("declinedPermissions", accessToken.getDeclinedPermissions());
+                authResponse.put("permissions", accessToken.getPermissions());
+                response.put("authResponse", authResponse);
+            } else {
+                response.put("status", "unknown");
+            }
+            return response;
         }
-        return new JSONObject();
+        catch(JSONException e) {
+            Log.e(TAG, "Got JSONException when building response", e);
+            return new JSONObject();
+        }
     }
 
     public JSONObject getFacebookRequestErrorResponse(FacebookRequestError error) {
-
-        String response = "{"
-            + "\"errorCode\": \"" + error.getErrorCode() + "\","
-            + "\"errorType\": \"" + error.getErrorType() + "\","
-            + "\"errorMessage\": \"" + error.getErrorMessage() + "\"";
-
-        int messageId = error.getUserActionMessageId();
-
-        // Check for INVALID_MESSAGE_ID
-        if (messageId != 0) {
-            String errorUserMessage = cordova.getActivity().getResources().getString(messageId);
-            // Safe check for null
-            if (errorUserMessage != null) {
-                    response += ",\"errorUserMessage\": \"" + cordova.getActivity().getResources().getString(error.getUserActionMessageId()) + "\"";
-            }
-        }
-
-        response += "}";
-
         try {
-            return new JSONObject(response);
-        } catch (JSONException e) {
+            JSONObject response = new JSONObject();
 
-            e.printStackTrace();
+            response.put("errorCode", error.getErrorCode());
+            response.put("errorType", error.getErrorType());
+            response.put("errorMessage", error.getErrorMessage());
+            response.put("errorUserMessage", error.getErrorUserMessage());
+
+            return response;
         }
-        return new JSONObject();
+        catch(JSONException e) {
+            Log.e(TAG, "Got JSONException when building response", e);
+            return new JSONObject();
+        }
     }
 
     public JSONObject getErrorResponse(Exception error, String message, int errorCode) {
