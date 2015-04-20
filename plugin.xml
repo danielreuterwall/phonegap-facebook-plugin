@@ -97,6 +97,7 @@
             <string>$APP_NAME</string>
         </config-file>
 
+        <!-- Removing seens we need to set multiple url schemes
         <config-file target="*-Info.plist" parent="CFBundleURLTypes">
           <array>
             <dict>
@@ -107,6 +108,7 @@
             </dict>
           </array>
         </config-file>
+        -->
 
         <!-- Facebook framework -->
         <framework src="platforms/ios/FBSDKCoreKit.framework" custom="true" />
