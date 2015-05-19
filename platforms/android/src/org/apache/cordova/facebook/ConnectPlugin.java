@@ -112,7 +112,6 @@ public class ConnectPlugin extends CordovaPlugin {
     public void onActivityResult(int requestCode, int resultCode, Intent intent) {
         super.onActivityResult(requestCode, resultCode, intent);
         Log.d(TAG, "activity result in plugin: requestCode(" + requestCode + "), resultCode(" + resultCode + ")");
-
         callbackManager.onActivityResult(requestCode, resultCode, intent);
     }
 
@@ -155,6 +154,7 @@ public class ConnectPlugin extends CordovaPlugin {
                 loginContext.sendPluginResult(pr);
                 return true;
             }
+
             // Loop through the permissions to see what
             // is being requested
             for (String permission : permissions) {
@@ -300,13 +300,23 @@ public class ConnectPlugin extends CordovaPlugin {
                 params = new JSONObject();
             }
 
-            // Loop through the permissions to see what
-            // is being requested
-            for (String permission : permissions) {
-                if (isPublishPermission(permission)) {
-                    publishPermissions = true;
+            final ConnectPlugin me = this;
+            Iterator<?> iter = params.keys();
+            while (iter.hasNext()) {
+                String key = (String) iter.next();
+                if (key.equals("method")) {
+                    try {
+                        this.method = params.getString(key);
+                    } catch (JSONException e) {
+                        Log.w(TAG, "Nonstring method parameter provided to dialog");
+                    }
                 } else {
-                    readPermissions = true;
+                    try {
+                        collect.putString(key, params.getString(key));
+                    } catch (JSONException e) {
+                        // Need to handle JSON parameters
+                        Log.w(TAG, "Nonstring parameter provided to dialog discarded");
+                    }
                 }
             }
             //this.paramBundle = new Bundle(collect);
