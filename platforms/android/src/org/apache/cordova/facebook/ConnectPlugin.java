@@ -42,6 +42,7 @@ import com.facebook.FacebookServiceException;
 import com.facebook.GraphRequest;
 import com.facebook.GraphResponse;
 import com.facebook.share.widget.*;
+import com.facebook.share.model.AppInviteContent;
 
 public class ConnectPlugin extends CordovaPlugin {
 
@@ -75,7 +76,7 @@ public class ConnectPlugin extends CordovaPlugin {
     public void initialize(CordovaInterface cordova, CordovaWebView webView) {
         FacebookSdk.sdkInitialize(cordova.getActivity().getApplicationContext());
         callbackManager = CallbackManager.Factory.create();
-        // Init logger
+
         logger = AppEventsLogger.newLogger(cordova.getActivity());
 
         int appResId = cordova.getActivity().getResources().getIdentifier("fb_app_id", "string", cordova.getActivity().getPackageName());
@@ -83,28 +84,6 @@ public class ConnectPlugin extends CordovaPlugin {
 
         // Set up the activity result callback to this class
         cordova.setActivityResultCallback(this);
-
-        // Open a session if we have one cached
-        // Session session = new Session.Builder(cordova.getActivity()).setApplicationId(applicationId).build();
-        // if (session.getState() == SessionState.CREATED_TOKEN_LOADED) {
-        //     Session.setActiveSession(session);
-        //     // - Create the request
-        //     Session.OpenRequest openRequest = new Session.OpenRequest(cordova.getActivity());
-        //     // - Set the status change call back
-        //     openRequest.setCallback(new Session.StatusCallback() {
-        //         @Override
-        //         public void call(Session session, SessionState state, Exception exception) {
-        //             onSessionStateChange(state, exception);
-        //         }
-        //     });
-        //     session.openForRead(openRequest);
-        // }
-
-        // If we have a valid open session, get user's info
-        // if (checkActiveSession(session)) {
-        //     // Call this method to initialize the session state info
-        //     onSessionStateChange(session.getState(), null);
-        // }
         super.initialize(cordova, webView);
     }
 
@@ -133,10 +112,7 @@ public class ConnectPlugin extends CordovaPlugin {
     public void onActivityResult(int requestCode, int resultCode, Intent intent) {
         super.onActivityResult(requestCode, resultCode, intent);
         Log.d(TAG, "activity result in plugin: requestCode(" + requestCode + "), resultCode(" + resultCode + ")");
-        if (trackingPendingCall) {
-            callbackManager.onActivityResult(requestCode, resultCode, intent);
-        }
-        trackingPendingCall = false;
+        callbackManager.onActivityResult(requestCode, resultCode, intent);
     }
 
     @Override
@@ -315,35 +291,35 @@ public class ConnectPlugin extends CordovaPlugin {
         //     callbackContext.success();
         //     return true;
         // }
-        // else if (action.equals("showDialog")) {
-        //     Bundle collect = new Bundle();
-        //     JSONObject params = null;
-        //     try {
-        //         params = args.getJSONObject(0);
-        //     } catch (JSONException e) {
-        //         params = new JSONObject();
-        //     }
+        else if (action.equals("showDialog")) {
+            Bundle collect = new Bundle();
+            JSONObject params = null;
+            try {
+                params = args.getJSONObject(0);
+            } catch (JSONException e) {
+                params = new JSONObject();
+            }
 
-        //     final ConnectPlugin me = this;
-        //     Iterator<?> iter = params.keys();
-        //     while (iter.hasNext()) {
-        //         String key = (String) iter.next();
-        //         if (key.equals("method")) {
-        //             try {
-        //                 this.method = params.getString(key);
-        //             } catch (JSONException e) {
-        //                 Log.w(TAG, "Nonstring method parameter provided to dialog");
-        //             }
-        //         } else {
-        //             try {
-        //                 collect.putString(key, params.getString(key));
-        //             } catch (JSONException e) {
-        //                 // Need to handle JSON parameters
-        //                 Log.w(TAG, "Nonstring parameter provided to dialog discarded");
-        //             }
-        //         }
-        //     }
-        //     this.paramBundle = new Bundle(collect);
+            final ConnectPlugin me = this;
+            Iterator<?> iter = params.keys();
+            while (iter.hasNext()) {
+                String key = (String) iter.next();
+                if (key.equals("method")) {
+                    try {
+                        this.method = params.getString(key);
+                    } catch (JSONException e) {
+                        Log.w(TAG, "Nonstring method parameter provided to dialog");
+                    }
+                } else {
+                    try {
+                        collect.putString(key, params.getString(key));
+                    } catch (JSONException e) {
+                        // Need to handle JSON parameters
+                        Log.w(TAG, "Nonstring parameter provided to dialog discarded");
+                    }
+                }
+            }
+            //this.paramBundle = new Bundle(collect);
             
         //     //The Share dialog prompts a person to publish an individual story or an Open Graph story to their timeline.
         //     //This does not require Facebook Login or any extended permissions, so it is the easiest way to enable sharing on web.
@@ -378,7 +354,36 @@ public class ConnectPlugin extends CordovaPlugin {
         //             }
         //         }
         //     };
+            if (this.method.equalsIgnoreCase("appInvite")) {
+                if("true".equals(collect.getString("canShow", "false"))) {
+                    boolean canShow = AppInviteDialog.canShow();
+                    Log.d(TAG, "App invite capabilities: " + canShow);
+                    callbackContext.success(Boolean.toString(canShow));
+                    return true;
+                }
 
+                String appLinkUrl, previewImageUrl;
+
+                appLinkUrl = collect.getString("link", null);
+                if(appLinkUrl == null) {
+                    callbackContext.error("Cannot show App invite dialog without a link URL");
+                    return true;
+                }
+                previewImageUrl = collect.getString("link", null);
+
+                if (AppInviteDialog.canShow()) {
+                    AppInviteContent content = new AppInviteContent.Builder()
+                                .setApplinkUrl(appLinkUrl)
+                                .setPreviewImageUrl(previewImageUrl)
+                                .build();
+
+                    AppInviteDialog.show(cordova.getActivity(), content);
+                    callbackContext.success("App invite dialog opened");
+                }
+                else {
+                    callbackContext.error("App invite dialog could not be opened");
+                }
+            }
         //     if (this.method.equalsIgnoreCase("feed")) {
         //         Runnable runnable = new Runnable() {
         //             public void run() {
@@ -458,11 +463,11 @@ public class ConnectPlugin extends CordovaPlugin {
         //         };
         //         this.trackingPendingCall = true;
         //         cordova.getActivity().runOnUiThread(runnable);
-        //     } else {
-        //         callbackContext.error("Unsupported dialog method.");
-        //     }
-        //    return true;
-        // }
+            else {
+                callbackContext.error("Unsupported dialog method.");
+            }
+            return true;
+        }
         // else if (action.equals("graphApi")) {
         //     graphContext = callbackContext;
         //     PluginResult pr = new PluginResult(PluginResult.Status.NO_RESULT);
