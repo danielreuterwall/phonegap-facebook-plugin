@@ -62,7 +62,7 @@
               android:label="@string/fb_app_name" />
         </config-file>
 
-        <framework src="platforms/android/FacebookLib" custom="true" />
+        <!--<framework src="platforms/android/FacebookLib" custom="true" />-->
 
         <!-- cordova plugin src files -->
         <source-file src="platforms/android/src/org/apache/cordova/facebook/ConnectPlugin.java" target-dir="src/org/apache/cordova/facebook" />
