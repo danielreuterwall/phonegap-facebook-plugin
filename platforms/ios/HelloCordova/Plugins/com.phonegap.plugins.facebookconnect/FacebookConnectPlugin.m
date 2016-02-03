@@ -21,17 +21,11 @@
 
 @implementation FacebookConnectPlugin
 
-
-- (CDVPlugin *)initWithWebView:(UIWebView *)theWebView {
+- (void)pluginInitialize {
     NSLog(@"Init FacebookConnect Session");
-    self = (FacebookConnectPlugin *)[super initWithWebView:theWebView];
-    
-    // Add notification listener for tracking app activity with FB Events
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(applicationDidBecomeActive)
                                                  name:UIApplicationDidBecomeActiveNotification object:nil];
-    
-    return self;
 }
 
 - (void)applicationDidBecomeActive {
