@@ -267,11 +267,12 @@
                                                  messageAsString:@"App invite dialog requires a link param."];
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:self.dialogCallbackId];
             }
-            FBSDKAppInviteContent *content =[[FBSDKAppInviteContent alloc] initWithAppLinkURL:[NSURL URLWithString:[params objectForKey:@"link"]]];
-            
+            FBSDKAppInviteContent *content =[[FBSDKAppInviteContent alloc] init];
+            content.appLinkURL = [NSURL URLWithString:[params objectForKey:@"link"]];
+
             //optionally set previewImageURL
             if(![params objectForKey:@"picture"]) {
-                content.previewImageURL = [NSURL URLWithString:[params objectForKey:@"picture"]];
+                content.appInvitePreviewImageURL = [NSURL URLWithString:[params objectForKey:@"picture"]];
             }
             
             dialog.content = content;
