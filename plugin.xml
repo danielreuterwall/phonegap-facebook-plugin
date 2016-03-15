@@ -96,6 +96,15 @@
         <config-file target="*-Info.plist" parent="FacebookDisplayName">
             <string>$APP_NAME</string>
         </config-file>
+        
+        <config-file target="*-Info.plist" parent="LSApplicationQueriesSchemes">
+          <array>
+            <string>fbapi</string>
+            <string>fb-messenger-api</string>
+            <string>fbauth2</string>
+            <string>fbshareextension</string>
+          </array>
+        </config-file>
 
         <!-- Removing seens we need to set multiple url schemes
         <config-file target="*-Info.plist" parent="CFBundleURLTypes">
