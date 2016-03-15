@@ -33,6 +33,16 @@
     [FBSDKAppEvents activateApp];
 }
 
+- (UIViewController*) topMostController {
+    UIViewController *topController = [UIApplication sharedApplication].keyWindow.rootViewController;
+    
+    while (topController.presentedViewController) {
+        topController = topController.presentedViewController;
+    }
+    
+    return topController;
+}
+
 /*
  * Check if a permision is a read permission.
  */
@@ -196,10 +206,10 @@
     
     FBSDKLoginManager *login = [[FBSDKLoginManager alloc] init];
     if(readPermissionFound) {
-        [login logInWithReadPermissions:newPermissions handler:loginHandler];
+        [login logInWithReadPermissions:newPermissions fromViewController:[self topMostController] handler:loginHandler];
     }
     else {
-        [login logInWithPublishPermissions:newPermissions handler:loginHandler];
+        [login logInWithPublishPermissions:newPermissions fromViewController:[self topMostController] handler:loginHandler];
     }
 }
 
